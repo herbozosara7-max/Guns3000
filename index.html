@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Juego Pro Celular</title>
+    <style>
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Arial', sans-serif; touch-action: none; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        canvas { display: block; background: #111; }
+        
+        /* Menú */
+        #menu { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.9); display: flex; flex-direction: column; 
+            align-items: center; justify-content: center; z-index: 20; color: white; pointer-events: auto;
+        }
+        .btn-arma { 
+            padding: 15px; margin: 8px; width: 220px; font-size: 18px; 
+            border: 2px solid #fff; background: #333; color: #fff; border-radius: 12px;
+        }
+        #btn-go { background: #28a745; display: none; font-weight: bold; margin-top: 20px; border: none; }
+
+        /* Controles */
+        .controls { position: absolute; bottom: 20px; left: 0; width: 100%; display: flex; justify-content: space-between; padding: 0 30px; pointer-events: none; }
+        .dpad { display: grid; grid-template-columns: repeat(3, 65px); gap: 8px; pointer-events: auto; }
+        .btn-dir { width: 65px; height: 65px; background: rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 28px; border: 1px solid #fff; }
+        .btn-fire { width: 100px; height: 100px; background: rgba(255,0,0,0.6); border-radius: 50%; border: 4px solid #fff; pointer-events: auto; color: white; font-weight: bold; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="menu">
+        <h1>SQUARE WARRIOR</h1>
+        <p>Elige tu arma para empezar:</p>
+        <button class="btn-arma" onclick="setArma('sniper')">Sniper (Lento)</button>
+        <button class="btn-arma" onclick="setArma('minigun')">Minigun (Rápido)</button>
+        <button class="btn-arma" onclick="setArma('lanzallamas')" style="color:orange; border-color:orange;">🔥 LANZALLAMAS (OP) 🔥</button>
+        <button id="btn-go" class="btn-arma" onclick="start()">¡EMPEZAR!</button>
+    </div>
+
+    <canvas id="stage"></canvas>
+
+    <div class="controls" id="controls" style="display:none;">
+        <div class="dpad">
+            <div></div> <div class="btn-dir" id="u">↑</div> <div></div>
+            <div class="btn-dir" id="l">←</div> <div class="btn-dir" id="d">↓</div> <div class="btn-dir" id="r">→</div>
+        </div>
+        <div class="btn-fire" id="f">FUEGO</div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('stage');
+    const ctx = canvas.getContext('2d');
+    
+    let gameRunning = false;
+    let weapon = "";
+    let frameCount = 0;
+    
+    let p = { x: 50, y: 0, w: 40, h: 40, hp: 100, speed: 5 };
+    let bullets = [];
+    let enemyBullets = [];
+    let enemies = [];
+    let boss = null;
+    let input = { u: false, d: false, l: false, r: false };
+
+    function init() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        p.y = canvas.height / 2;
+    }
+    window.addEventListener('resize', init);
+    init();
+
+    function setupBtn(id, key) {
+        const el = document.getElementById(id);
+        el.addEventListener('touchstart', (e) => { e.preventDefault(); input[key] = true; });
+        el.addEventListener('touchend', (e) => { e.preventDefault(); input[key] = false; });
+    }
+    setupBtn('u','u'); setupBtn('d','d'); setupBtn('l','l'); setupBtn('r','r');
+
+    document.getElementById('f').addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        fire();
+    });
+
+    function setArma(type) {
+        weapon = type;
+        document.getElementById('btn-go').style.display = "block";
+    }
+
+    function start() {
+        document.getElementById('menu').style.display = "none";
+        document.getElementById('controls').style.display = "flex";
+        gameRunning = true;
+        gameLoop();
+        setInterval(spawn, 5000);
+    }
+
+    function fire() {
+        if(!gameRunning) return;
+        // Lanzallamas arreglado: hace mucho daño y tiene color naranja
+        let dmg = weapon === 'lanzallamas' ? 35 : (weapon === 'sniper' ? 70 : 15);
+        let color = weapon === 'lanzallamas' ? 'orange' : 'cyan';
+        bullets.push({ x: p.x + p.w, y: p.y + p.h/2, dmg: dmg, c: color });
+    }
+
+    function spawn() {
+        if(gameRunning) {
+            enemies.push({ 
+                x: canvas.width, 
+                y: Math.random() * (canvas.height - 150), 
+                w: 45, h: 45, 
+                lastShot: 0 
+            });
+        }
+    }
+
+    function gameLoop() {
+        if(!gameRunning) return;
+        ctx.fillStyle = "#111";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        frameCount++;
+
+        // Movimiento
+        if(input.u && p.y > 0) p.y -= p.speed;
+        if(input.d && p.y < canvas.height - 100) p.y += p.speed;
+        if(input.l && p.x > 0) p.x -= p.speed;
+        if(input.r && p.x < canvas.width/2) p.x += p.speed;
+
+        // Jugador
+        ctx.fillStyle = "yellow";
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+
+        // Balas Aliadas (APUNTADO AUTOMÁTICO)
+        bullets.forEach((b, i) => {
+            let target = null;
+            if(boss) target = boss;
+            else if(enemies.length > 0) target = enemies[0];
+
+            if(target) {
+                let dx = target.x - b.x;
+                let dy = (target.y + target.h/2) - b.y;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                b.x += (dx/dist) * 12;
+                b.y += (dy/dist) * 12;
+            } else {
+                b.x += 12;
+            }
+
+            ctx.fillStyle = b.c;
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, 8, 0, Math.PI*2);
+            ctx.fill();
+
+            if(b.x > canvas.width) bullets.splice(i, 1);
+        });
+
+        // Enemigos
+        enemies.forEach((en, ei) => {
+            en.x -= 1.5;
+            // Dibujo solicitado: Rojo con mitad verde y logo N
+            ctx.fillStyle = "red";
+            ctx.fillRect(en.x, en.y, en.w, en.h);
+            ctx.fillStyle = "green";
+            ctx.fillRect(en.x + en.w/2, en.y, en.w/2, en.h);
+            ctx.fillStyle = "white";
+            ctx.font = "bold 16px Arial";
+            ctx.fillText("N", en.x + 28, en.y + 28);
+
+            // Enemigo Dispara cada 3 segundos
+            if(frameCount % 180 === 0) {
+                enemyBullets.push({ x: en.x, y: en.y + en.h/2, vx: -5 });
+            }
+
+            // Colisión bala a enemigo
+            bullets.forEach((b, bi) => {
+                if(b.x > en.x && b.x < en.x+en.w && b.y > en.y && b.y < en.y+en.h) {
+                    enemies.splice(ei, 1);
+                    bullets.splice(bi, 1);
+                }
+            });
+        });
+
+        // Balas Enemigas
+        ctx.fillStyle = "#ff00ff";
+        enemyBullets.forEach((eb, i) => {
+            eb.x += eb.vx;
+            ctx.fillRect(eb.x, eb.y, 15, 6);
+            // Colisión con jugador
+            if(eb.x < p.x + p.w && eb.x > p.x && eb.y < p.y + p.h && eb.y > p.y) {
+                p.hp -= 5;
+                enemyBullets.splice(i, 1);
+            }
+        });
+
+        // Jefe Final (al minuto)
+        if(frameCount === 3600) boss = { x: canvas.width - 150, y: canvas.height/2, w: 120, h: 120, hp: 100 };
+        
+        if(boss) {
+            ctx.fillStyle = "red";
+            ctx.fillRect(boss.x, boss.y, boss.w, boss.h);
+            ctx.fillStyle = "black";
+            // Cuernos
+            ctx.beginPath();
+            ctx.moveTo(boss.x, boss.y); ctx.lineTo(boss.x+20, boss.y-40); ctx.lineTo(boss.x+40, boss.y); ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(boss.x+80, boss.y); ctx.lineTo(boss.x+100, boss.y-40); ctx.lineTo(boss.x+120, boss.y); ctx.fill();
+
+            // Jefe dispara
+            if(frameCount % 100 === 0) enemyBullets.push({ x: boss.x, y: boss.y + 60, vx: -7 });
+
+            bullets.forEach((b, bi) => {
+                if(b.x > boss.x && b.x < boss.x + boss.w && b.y > boss.y && b.y < boss.y + boss.h) {
+                    boss.hp -= b.dmg;
+                    bullets.splice(bi, 1);
+                }
+            });
+            if(boss.hp <= 0) { alert("¡VICTORIA!"); location.reload(); }
+        }
+
+        // Interfaz
+        ctx.fillStyle = "white";
+        ctx.font = "20px Arial";
+        ctx.fillText("TU HP: " + p.hp, 20, 40);
+        if(boss) ctx.fillText("BOSS: " + boss.hp, canvas.width - 160, 40);
+
+        if(p.hp <= 0) { alert("GAME OVER"); location.reload(); }
+
+        requestAnimationFrame(gameLoop);
+    }
+</script>
+</body>
+</html>
